@@ -1,82 +1,77 @@
 const Product = require("./../models/productModel");
 const APIFeatures = require("./../utils/apiFeatures");
 
-function sendError(req, res, err, status) {
-  res.status(status).json(err);
-}
-
-exports.getAllProducts = async function (req, res, next) {
-  const features = new APIFeatures(Product.find(), req.query)
-    .filter()
-    .sort()
-    .paginate();
-
-  const products = await features.query;
-
-  res.status(200).json({
-    status: "success",
-    results: products.length,
-    payload: products,
-    totalPages: 0,
-    prevPage: null,
-    nextPage: null,
-    page: req.query.page ? req.query.page : 1,
-    hasPrevPage: false,
-    hasNextPage: false,
-    prevLink: null,
-    nextLink: null,
-  });
-};
-
-exports.getProduct = async function (req, res, next) {
+exports.getAllProducts = async function (req, res) {
   try {
-    const product = await Product.findById(req.params.id);
+    const page = Number(req.query.page || 1);
+    const limit = 10;
 
-    res.status(200).json({ status: "success", data: product });
-  } catch (err) {
-    sendError(req, res, err, 404);
-  }
-};
+    const features = new APIFeatures(Product.find(), req.query).filter().sort().paginate();
+    const [products, totalDocs] = await Promise.all([
+      features.query,
+      Product.countDocuments(),
+    ]);
 
-exports.createProduct = async function (req, res, next) {
-  try {
-    const newProduct = await Product.create(req.body);
-    console.log(req.body);
-    res.status(201).json({ status: "created", data: newProduct });
-  } catch (err) {
-    sendError(req, res, err, 500);
-  }
-};
-
-exports.updateProduct = async function (req, res, next) {
-  try {
-    const productUpdate = await Product.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        returnDocument: "after",
-        runValidators: true,
-      },
-    );
+    const totalPages = Math.ceil(totalDocs / limit) || 1;
 
     res.status(200).json({
-      status: "succes",
-      data: productUpdate,
+      status: "success",
+      payload: products,
+      totalPages,
+      prevPage: page > 1 ? page - 1 : null,
+      nextPage: page < totalPages ? page + 1 : null,
+      page,
+      hasPrevPage: page > 1,
+      hasNextPage: page < totalPages,
     });
   } catch (err) {
-    sendError(req, res, err, 500);
+    res.status(500).json({ status: "error", message: err.message });
   }
 };
 
-exports.deleteProduct = async function (req, res, next) {
+exports.getProduct = async function (req, res) {
   try {
-    const deletedProduct = await Product.findByIdAndDelete(req.params.id);
-
-    res.status(204).json({
-      status: "delete succes",
-      data: deletedProduct,
-    });
+    const product = await Product.findById(req.params.pid);
+    if (!product) return res.status(404).json({ status: "error", message: "Product not found" });
+    res.status(200).json({ status: "success", payload: product });
   } catch (err) {
-    sendError(req, res, err, 404);
+    res.status(400).json({ status: "error", message: err.message });
+  }
+};
+
+exports.createProduct = async function (req, res) {
+  try {
+    const newProduct = await Product.create(req.body);
+    res.status(201).json({ status: "created", payload: newProduct });
+  } catch (err) {
+    res.status(400).json({ status: "error", message: err.message });
+  }
+};
+
+exports.updateProduct = async function (req, res) {
+  try {
+    const updateData = { ...req.body };
+    delete updateData._id;
+
+    const product = await Product.findByIdAndUpdate(req.params.pid, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!product) return res.status(404).json({ status: "error", message: "Product not found" });
+
+    res.status(200).json({ status: "success", payload: product });
+  } catch (err) {
+    res.status(400).json({ status: "error", message: err.message });
+  }
+};
+
+exports.deleteProduct = async function (req, res) {
+  try {
+    const deletedProduct = await Product.findByIdAndDelete(req.params.pid);
+    if (!deletedProduct) return res.status(404).json({ status: "error", message: "Product not found" });
+    res.status(204).send();
+  } catch (err) {
+    res.status(400).json({ status: "error", message: err.message });
   }
 };
